@@ -3,6 +3,7 @@
   "private": false,
   "version": "1.0.0",
   "type": "module",
+  "homepage": "https://nnitin09.github.io/-Deadlock-Detective-Tool-/",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

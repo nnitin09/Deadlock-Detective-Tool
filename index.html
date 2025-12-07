@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Deadlock Detective</title>
+    <!-- Tailwind is handled by postcss in build, but keeping CDN for quick dev preview if needed, 
+         though strictly in a build environment it's better to import css in js. 
+         Leaving as is for compatibility with your current setup. -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       /* Minimal resets */
@@ -21,15 +24,15 @@
   <script type="importmap">
 {
   "imports": {
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
-    "react-markdown": "https://aistudiocdn.com/react-markdown@^10.1.0",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
-    "d3": "https://aistudiocdn.com/d3@^7.9.0",
     "vite": "https://aistudiocdn.com/vite@^7.2.6",
-    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1"
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
+    "d3": "https://aistudiocdn.com/d3@^7.9.0",
+    "react-markdown": "https://aistudiocdn.com/react-markdown@^10.1.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/"
   }
 }
 </script>
@@ -42,9 +45,6 @@
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
         <p>Loading Application...</p>
-        <p style="font-size: 0.8em; margin-top: 10px; opacity: 0.7;">
-          (If this screen persists on GitHub Pages, the app needs to be built.<br/>Run <code>npm run build</code> locally and deploy the dist folder.)
-        </p>
       </div>
     </div>
     <script type="module" src="./index.tsx"></script>
