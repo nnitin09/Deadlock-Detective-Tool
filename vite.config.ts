@@ -6,9 +6,6 @@ export default defineConfig({
   plugins: [react()],
   // CRITICAL: This must match your GitHub Repository name exactly, including dashes.
   base: '/-Deadlock-Detective-Tool-/', 
-  define: {
-    'process.env': {}
-  },
   build: {
     outDir: 'dist',
     sourcemap: true

@@ -23,124 +23,83 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragLine, setDragLine] = useState<{ x1: number, y1: number, x2: number, y2: number } | null>(null);
   const [connectSource, setConnectSource] = useState<string | null>(null);
-
-  // Simulation ref to keep it stable across renders
   const simulationRef = useRef<d3.Simulation<Node, undefined> | null>(null);
-  
-  // Store current dimensions in a ref so the 'tick' function always accesses live values
   const dimensionsRef = useRef({ width: 0, height: 0 });
 
   useEffect(() => {
     if (!wrapperRef.current || !svgRef.current) return;
+    if (!d3 || !d3.forceSimulation) return;
 
-    // Safety check for D3 availability
-    if (!d3 || !d3.forceSimulation) {
-      console.error("D3 library not loaded correctly");
-      return;
-    }
-
-    // Initialize simulation if not exists
     if (!simulationRef.current) {
       simulationRef.current = d3.forceSimulation<Node>()
-        .force('link', d3.forceLink<Node, any>().id((d: any) => d.id).distance(100))
-        .force('charge', d3.forceManyBody().strength(-300))
-        .force('collide', d3.forceCollide().radius(35));
+        .force('link', d3.forceLink<Node, any>().id((d: any) => d.id).distance(150)) // Increased distance slightly for better readability
+        .force('charge', d3.forceManyBody().strength(-400))
+        .force('collide', d3.forceCollide().radius(45));
     }
 
     const simulation = simulationRef.current;
     const svg = d3.select(svgRef.current);
 
-    // --- RESIZE OBSERVER SETUP ---
     let resizeObserver: ResizeObserver | null = null;
-    
-    // Check if ResizeObserver is supported
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver((entries) => {
         if (!entries || entries.length === 0) return;
-        
         const { width, height } = entries[0].contentRect;
-        
-        // Update refs
         dimensionsRef.current = { width, height };
-        
-        // Update center force dynamically
         simulation.force('center', d3.forceCenter(width / 2, height / 2));
-        
-        // Re-heat simulation to gently pull nodes into the new view
         simulation.alpha(0.5).restart();
       });
-
       resizeObserver.observe(wrapperRef.current);
     } else {
-      // Fallback for environments without ResizeObserver
       const rect = wrapperRef.current.getBoundingClientRect();
-      const width = rect.width;
-      const height = rect.height;
-      dimensionsRef.current = { width, height };
-      simulation.force('center', d3.forceCenter(width / 2, height / 2));
+      dimensionsRef.current = { width: rect.width, height: rect.height };
+      simulation.force('center', d3.forceCenter(rect.width / 2, rect.height / 2));
     }
 
-    // --- DATA BINDING ---
-    // Update nodes data
     simulation.nodes(nodes);
-    
-    // Create fresh link objects to avoid stale references
-    // Use defensive map to ensure we don't pass undefined if edges is weird
     const simulationLinks = edges.map(e => ({ ...e }));
     (simulation.force('link') as d3.ForceLink<Node, any>).links(simulationLinks);
 
-    // Bind data to DOM
-    // CRITICAL FIX: Do not use a key function (d => d.id) here. 
-    // React creates the DOM elements, so they initially lack D3 data (__data__).
-    // If we use a key function, D3 tries to read .id from undefined on the existing elements, causing a crash.
-    // By omitting the key function, D3 binds by index, which aligns correctly with React's render order.
-    svg.selectAll<SVGGElement, Node>('.node-group')
-       .data(nodes);
-       
-    svg.selectAll<SVGLineElement, any>('.link')
-       .data(simulationLinks);
+    // Bind data to both visible lines and hit-area lines
+    svg.selectAll<SVGLineElement, any>('.link-visible').data(simulationLinks);
+    svg.selectAll<SVGLineElement, any>('.link-hit').data(simulationLinks);
+    svg.selectAll<SVGGElement, Node>('.node-group').data(nodes);
 
     simulation.alpha(1).restart();
+    const radius = 25;
 
-    // Node radius for boundary calculations
-    const radius = 20;
-
-    // --- TICK FUNCTION ---
     simulation.on('tick', () => {
       const { width, height } = dimensionsRef.current;
-      
       const maxX = width > 0 ? width : 2000;
       const maxY = height > 0 ? height : 2000;
 
       svg.selectAll<SVGGElement, Node>('.node-group')
         .attr('transform', d => {
-          // STRICT SAFETY CHECK: If d is undefined or has no coordinates, hide it or skip update
           if (!d || typeof d.x !== 'number' || typeof d.y !== 'number') return null;
-
-          // Clamp
           d.x = Math.max(radius, Math.min(maxX - radius, d.x));
           d.y = Math.max(radius, Math.min(maxY - radius, d.y));
-
           return `translate(${d.x},${d.y})`;
         });
 
-      svg.selectAll<SVGLineElement, any>('.link')
-        .attr('x1', d => (d?.source as unknown as Node)?.x ?? 0)
-        .attr('y1', d => (d?.source as unknown as Node)?.y ?? 0)
-        .attr('x2', d => (d?.target as unknown as Node)?.x ?? 0)
-        .attr('y2', d => (d?.target as unknown as Node)?.y ?? 0);
+      // Update both the visible line and the transparent hit line
+      const updateLine = (selection: d3.Selection<d3.BaseType, any, any, any>) => {
+        selection
+          .attr('x1', d => (d?.source as unknown as Node)?.x ?? 0)
+          .attr('y1', d => (d?.source as unknown as Node)?.y ?? 0)
+          .attr('x2', d => (d?.target as unknown as Node)?.x ?? 0)
+          .attr('y2', d => (d?.target as unknown as Node)?.y ?? 0);
+      };
+
+      updateLine(svg.selectAll('.link-visible'));
+      updateLine(svg.selectAll('.link-hit'));
     });
 
-    // Cleanup
     return () => {
       simulation.stop();
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
+      if (resizeObserver) resizeObserver.disconnect();
     };
   }, [nodes, edges]);
 
-  // Drag behavior
   const handleDragStart = (e: React.MouseEvent, node: Node) => {
     if(e.shiftKey) {
       setConnectSource(node.id);
@@ -211,18 +170,31 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
            <marker id="arrowhead-danger" markerWidth="10" markerHeight="7" refX="28" refY="3.5" orient="auto">
             <polygon points="0 0, 10 3.5, 0 7" fill="#ef4444" />
           </marker>
+          <marker id="arrowhead-hover" markerWidth="10" markerHeight="7" refX="28" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#ef4444" />
+          </marker>
         </defs>
 
         {edges.map(link => {
           const isCycle = highlightedCycle.includes(link.source) && highlightedCycle.includes(link.target);
           return (
-            <line
-              key={link.id}
-              className={`link ${isCycle ? 'stroke-red-500 stroke-2' : 'stroke-slate-500 stroke-1'}`}
-              markerEnd={isCycle ? "url(#arrowhead-danger)" : "url(#arrowhead)"}
-              onClick={(e) => { e.stopPropagation(); onRemoveEdge(link.id); }}
-              cursor="pointer"
-            />
+            <g key={link.id} className="group">
+              {/* Visible Line - styling handled via class and group-hover */}
+              <line
+                className={`link-visible pointer-events-none transition-all duration-200 
+                  ${isCycle ? 'stroke-red-500 stroke-2' : 'stroke-slate-500 stroke-1'} 
+                  group-hover:stroke-red-500 group-hover:stroke-[3px]`}
+                markerEnd={isCycle ? "url(#arrowhead-danger)" : "url(#arrowhead)"}
+              />
+              
+              {/* Invisible Hit Area Line - wider stroke for easier clicking */}
+              <line
+                className="link-hit opacity-0 hover:opacity-10 stroke-red-500 stroke-[15px] cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); onRemoveEdge(link.id); }}
+              >
+                <title>Click to break link</title>
+              </line>
+            </g>
           );
         })}
 
@@ -230,47 +202,62 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
           <line 
             x1={dragLine.x1} y1={dragLine.y1} 
             x2={dragLine.x2} y2={dragLine.y2} 
-            className="stroke-indigo-400 stroke-2 stroke-dasharray-4"
+            className="stroke-indigo-400 stroke-2 stroke-dasharray-4 pointer-events-none"
           />
         )}
 
-        {nodes.map(node => (
-          <g 
-            key={node.id} 
-            className="node-group cursor-grab active:cursor-grabbing"
-            onMouseDown={(e) => handleDragStart(e, node)}
-            onMouseUp={(e) => handleNodeMouseUp(e, node)}
-          >
-            {node.type === NodeType.PROCESS ? (
-              <circle 
-                r="20" 
-                className={`${highlightedCycle.includes(node.id) ? 'fill-red-500/20 stroke-red-500' : 'fill-slate-900 stroke-emerald-500'} stroke-2 transition-colors`}
-              />
-            ) : (
-              <rect 
-                x="-20" y="-20" width="40" height="40" rx="4"
-                className={`${highlightedCycle.includes(node.id) ? 'fill-red-500/20 stroke-red-500' : 'fill-slate-900 stroke-sky-500'} stroke-2 transition-colors`}
-              />
-            )}
-            
-            <text 
-              y="5" 
-              textAnchor="middle" 
-              className="text-xs fill-white font-medium pointer-events-none select-none"
-            >
-              {node.id.split('-')[0]}
-            </text>
-
+        {nodes.map(node => {
+          const isHighlighted = highlightedCycle.includes(node.id);
+          const allocatedCount = edges.filter(e => e.source === node.id).length;
+          
+          return (
             <g 
-              className="opacity-0 hover:opacity-100 transition-opacity cursor-pointer"
-              transform="translate(15, -25)"
-              onClick={(e) => { e.stopPropagation(); onRemoveNode(node.id); }}
+              key={node.id} 
+              className="node-group cursor-grab active:cursor-grabbing"
+              onMouseDown={(e) => handleDragStart(e, node)}
+              onMouseUp={(e) => handleNodeMouseUp(e, node)}
             >
-              <circle r="8" className="fill-slate-800 stroke-slate-600" />
-              <text y="3" x="0" textAnchor="middle" className="text-[10px] fill-red-400 font-bold">×</text>
+              {node.type === NodeType.PROCESS ? (
+                <circle 
+                  r="22" 
+                  className={`${isHighlighted ? 'fill-red-500/20 stroke-red-500' : 'fill-slate-900 stroke-emerald-500'} stroke-2 transition-colors`}
+                />
+              ) : (
+                <rect 
+                  x="-24" y="-24" width="48" height="48" rx="6"
+                  className={`${isHighlighted ? 'fill-red-500/20 stroke-red-500' : 'fill-slate-900 stroke-sky-500'} stroke-2 transition-colors`}
+                />
+              )}
+              
+              <text 
+                y={node.type === NodeType.PROCESS ? 5 : -5} 
+                textAnchor="middle" 
+                className="text-xs fill-white font-bold pointer-events-none select-none"
+              >
+                {node.id.split('-')[0]}
+              </text>
+
+              {node.type === NodeType.RESOURCE && (
+                <text 
+                  y={12} 
+                  textAnchor="middle" 
+                  className="text-[9px] fill-sky-300 font-mono pointer-events-none select-none"
+                >
+                  {allocatedCount}/{node.maxInstances}
+                </text>
+              )}
+
+              <g 
+                className="opacity-0 hover:opacity-100 transition-opacity cursor-pointer"
+                transform="translate(18, -28)"
+                onClick={(e) => { e.stopPropagation(); onRemoveNode(node.id); }}
+              >
+                <circle r="8" className="fill-slate-800 stroke-slate-600" />
+                <text y="3" x="0" textAnchor="middle" className="text-[10px] fill-red-400 font-bold">×</text>
+              </g>
             </g>
-          </g>
-        ))}
+          );
+        })}
       </svg>
     </div>
   );

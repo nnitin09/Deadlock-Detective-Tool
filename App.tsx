@@ -1,11 +1,10 @@
-import React, { useState, useCallback, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useCallback, ErrorInfo, ReactNode, Component } from 'react';
 import { 
   Play, 
   RefreshCw, 
   BrainCircuit, 
   LayoutDashboard,
   Server,
-  ArrowRight,
   AlertTriangle
 } from 'lucide-react';
 import { ControlPanel } from './components/ControlPanel';
@@ -26,7 +25,14 @@ interface ErrorBoundaryState {
 }
 
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = { hasError: false, error: null };
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
+
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+  }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
@@ -68,18 +74,19 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 const createInitialNodes = (): Node[] => [
   { id: 'P1', type: NodeType.PROCESS, x: 100, y: 150 },
   { id: 'P2', type: NodeType.PROCESS, x: 250, y: 150 },
-  { id: 'R1', type: NodeType.RESOURCE, x: 175, y: 80 },
-  { id: 'R2', type: NodeType.RESOURCE, x: 175, y: 220 },
+  { id: 'P3', type: NodeType.PROCESS, x: 175, y: 250 },
+  { id: 'R1', type: NodeType.RESOURCE, x: 175, y: 80, maxInstances: 2 }, // Multi-instance resource
+  { id: 'R2', type: NodeType.RESOURCE, x: 50, y: 200, maxInstances: 1 },
 ];
 
 const createInitialEdges = (): Edge[] => [
   { id: 'e1', source: 'R1', target: 'P1' }, // R1 assigned to P1
   { id: 'e2', source: 'P1', target: 'R2' }, // P1 requests R2
-  { id: 'e3', source: 'R2', target: 'P2' }, // R2 assigned to P2
+  { id: 'e3', source: 'R1', target: 'P2' }, // R1 assigned to P2
+  { id: 'e4', source: 'P2', target: 'R1' }, // P2 requests R1 (Cycle, but R1 has 2 instances, so might be safe depending on other edges)
 ];
 
 function DeadlockDetectiveApp() {
-  // Use lazy initialization with factory functions to ensure fresh objects on mount and reset
   const [nodes, setNodes] = useState<Node[]>(createInitialNodes);
   const [edges, setEdges] = useState<Edge[]>(createInitialEdges);
   const [result, setResult] = useState<DeadlockResult | null>(null);
@@ -92,14 +99,18 @@ function DeadlockDetectiveApp() {
     const count = nodes.filter(n => n.type === type).length + 1;
     const prefix = type === NodeType.PROCESS ? 'P' : 'R';
     
-    // Spawn nodes in a conservative area (50-200) so they exist on 320px screens
     const newNode: Node = {
       id: `${prefix}${count}-${Date.now().toString().slice(-4)}`,
       type,
       x: 50 + Math.random() * 150, 
-      y: 50 + Math.random() * 150
+      y: 50 + Math.random() * 150,
+      maxInstances: type === NodeType.RESOURCE ? 1 : undefined
     };
     setNodes(prev => [...prev, newNode]);
+  };
+
+  const handleUpdateNode = (id: string, updates: Partial<Node>) => {
+    setNodes(prev => prev.map(n => n.id === id ? { ...n, ...updates } : n));
   };
 
   const handleRemoveNode = (id: string) => {
@@ -117,7 +128,24 @@ function DeadlockDetectiveApp() {
       return;
     }
 
-    if (edges.some(e => e.source === sourceId && e.target === targetId)) return;
+    // Check capacity constraint if adding an allocation edge (Resource -> Process)
+    if (sourceNode.type === NodeType.RESOURCE) {
+      const currentAllocations = edges.filter(e => e.source === sourceId).length;
+      const capacity = sourceNode.maxInstances || 1;
+      if (currentAllocations >= capacity) {
+        alert(`Resource ${sourceNode.id.split('-')[0]} is fully allocated (${currentAllocations}/${capacity}). Increase capacity to add more allocations.`);
+        return;
+      }
+    }
+
+    // Prevent duplicate edges (same direction)
+    // In multi-level RAG, multiple edges are allowed (Process needs 2 units of R1), 
+    // but for UI simplicity we usually limit to 1 visual edge per pair. 
+    // Let's enforce 1 edge per pair for this version to keep the graph readable.
+    if (edges.some(e => e.source === sourceId && e.target === targetId)) {
+        alert("Single edge per pair limit enforced for visualization clarity.");
+        return;
+    }
 
     const newEdge: Edge = {
       id: `e-${Date.now()}`,
@@ -173,7 +201,7 @@ function DeadlockDetectiveApp() {
               <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
                 Deadlock Detective
               </h1>
-              <p className="text-xs text-slate-400 hidden sm:block">OS Resource Allocation Visualizer</p>
+              <p className="text-xs text-slate-400 hidden sm:block">Multi-Instance RAG Visualizer</p>
             </div>
           </div>
           
@@ -188,7 +216,7 @@ function DeadlockDetectiveApp() {
               onClick={runDetection}
               className="flex-1 sm:flex-none flex justify-center items-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-all shadow-lg shadow-indigo-900/50"
             >
-              <Play className="w-4 h-4" /> Detect
+              <Play className="w-4 h-4" /> Detect & Analyze
             </button>
           </div>
         </div>
@@ -201,10 +229,11 @@ function DeadlockDetectiveApp() {
         <div className="lg:col-span-3 space-y-6 order-2 lg:order-1">
           <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 shadow-sm">
             <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-              <LayoutDashboard className="w-4 h-4" /> System Components
+              <LayoutDashboard className="w-4 h-4" /> System Controls
             </h2>
             <ControlPanel 
               onAddNode={handleAddNode}
+              onUpdateNode={handleUpdateNode}
               nodes={nodes}
               edges={edges}
             />
@@ -224,8 +253,8 @@ function DeadlockDetectiveApp() {
                 <span>Resource (Square)</span>
               </div>
               <div className="flex items-center gap-3">
-                <ArrowRight className="w-4 h-4 text-slate-500" />
-                <span>Request / Allocation</span>
+                <div className="text-xs text-sky-300 font-mono bg-slate-800 px-1 rounded">2/3</div>
+                <span>Allocated / Total</span>
               </div>
             </div>
           </div>
@@ -235,8 +264,7 @@ function DeadlockDetectiveApp() {
         <div className="lg:col-span-6 bg-slate-900 rounded-xl border border-slate-800 shadow-sm overflow-hidden flex flex-col min-h-[400px] lg:min-h-[500px] order-1 lg:order-2">
           <div className="p-4 border-b border-slate-800 flex justify-between items-center">
             <h2 className="font-semibold text-slate-200">Resource Allocation Graph</h2>
-            <div className="text-xs text-slate-500 hidden sm:block">Shift + Drag to connect</div>
-             <div className="text-xs text-slate-500 sm:hidden">Drag nodes • Shift+Drag to connect</div>
+            <div className="text-xs text-slate-500 hidden sm:block">Shift+Drag to connect • Click line to remove</div>
           </div>
           <div className="flex-1 relative bg-slate-950/50">
             <GraphCanvas 

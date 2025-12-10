@@ -12,6 +12,7 @@ export interface Node {
   vy?: number;
   fx?: number | null;
   fy?: number | null;
+  maxInstances?: number; // Only for RESOURCES: Total capacity (e.g., 3 printers)
 }
 
 export interface Edge {
@@ -22,7 +23,8 @@ export interface Edge {
 
 export interface DeadlockResult {
   hasDeadlock: boolean;
-  cycle: string[]; // Array of Node IDs involved in the cycle
+  cycle: string[]; // In multi-instance, this represents the set of deadlocked processes/resources
   involvedProcesses: string[];
   involvedResources: string[];
+  unsafeAllocations?: string[]; // Optional: Help visualize where things got stuck
 }
